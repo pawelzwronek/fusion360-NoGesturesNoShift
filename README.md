@@ -1,2 +1,2 @@
 # fusion360-NoGestures
-Disable gestures and make the right mouse button act as the middle one
+Disable gestures and make the right mouse button used to orbit the viewport

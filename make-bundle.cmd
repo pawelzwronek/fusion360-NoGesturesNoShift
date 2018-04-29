@@ -1,6 +1,6 @@
 @prompt $g
 
-set dst="bundle v1.1"
+set dst="bundle v1.0"
 
 rmdir /S /Q %dst%
 mkdir %dst%
@@ -15,6 +15,6 @@ copy pyHook\LICENSE.txt  %dst%\pyHook
 copy NoGestures.manifest  %dst%
 copy autohotkey.py  %dst%
 copy NoGestures.py  %dst%
-copy icons %dst%\icons
+copy icons\NoGestures.png %dst%\icons
 
 pause
