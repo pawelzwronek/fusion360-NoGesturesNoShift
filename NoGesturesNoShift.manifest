@@ -6,7 +6,7 @@
 	"description":	{
 		"":	"Disables gestures so you can use RMB to orbit the viewport"
 	},
-	"version":	"1.0",
+	"version":	"1.0.0",
 	"runOnStartup":	true,
 	"supportedOS":	"windows",
 	"editEnabled":	true
