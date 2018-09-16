@@ -105,7 +105,7 @@ def block_mouse_move(block):
 
 
 def GetKeyState(key):
-    return windll.user32.GetKeyState(ph.HookConstants.VKeyToID(key)) & (~1)
+    return windll.user32.GetKeyState(ph.HookConstants.VKeyToID(key)) & 0x8000
 
 def SetKeyState(key, state):
     KEYEVENTF_EXTENDEDKEY = 0x0001
