@@ -3,6 +3,7 @@
 
 # Changelog
 # v1.0 - Initial version
+# v1.0.1 - fix GetKeyState() on Win7
 
 import math
 import threading
