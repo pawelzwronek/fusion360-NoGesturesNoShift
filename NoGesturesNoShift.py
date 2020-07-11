@@ -5,6 +5,7 @@
 # v1.0 - Initial version
 # v1.0.1 - fix GetKeyState() on Win7
 # v1.2 - build for python 3.7
+# v1.3 - fix for Fusion360 v2.0.8609 - June 2020 Update
 
 import math
 import threading
@@ -78,9 +79,8 @@ except Exception as ex:
 # ==================================+++++++++++++++++===================================================================
 # ==================================   main script   ===================================================================
 
-
 def fire_in(func, time_ms, ars=None):
-    log('fire in ' + str(time_ms) + ' ' + str(func))
+    log('fire in ' + str(time_ms) + ' ' + str(func.__name__) + '(' + str(ars) + ')')
     threading.Timer(time_ms/1000, func, ars).start()
 
 xpos = 0
@@ -96,7 +96,8 @@ shift_pressed = False
 
 def is_in_fusion():
     className = ahk.getClassUnderMouse()
-    return className == 'Qt5QWindowIcon'
+    log('className: ' + str(className))
+    return className == 'Qt5QWindowIcon:Fusion360'
 
 
 def detect_move(start=-1):
@@ -126,15 +127,14 @@ def RButton(event):
             if is_in_fusion():
                 log('rdown inFusion')
                 rbutton_down = True
-                fire_in(ahk.MUp, 0)
-                fire_in(ahk.MDown, 10)
+                fire_in(ahk.MDown, 20)
                 detect_move(True)
                 shift_pressed = ahk.GetKeyState('VK_LSHIFT')
                 if rmbAsOrbit:
                     if not shift_pressed:
                         ahk.SetKeyState('VK_LSHIFT', True) # press SHIFT key
                     else:
-                        fire_in(ahk.MUp, 20)
+                        fire_in(ahk.MUp, 30)
                 return False  # block event
             else:
                 log('rdown ')
@@ -157,16 +157,15 @@ def RButtonup(event):
                 if not move_detected:
                     if not rmbAsOrbit and shift_pressed:
                         log('no move, shift')
-                        fire_in(ahk.MDown, 0)
-                        fire_in(ahk.MUp, 10)
                         ahk.block_mouse_move(True)
+                        fire_in(ahk.MUp, 10)
                         fire_in(ahk.block_mouse_move, 100, {False})
                     elif not shift_pressed:
                         log('no move, no shift')
-                        fire_in(ahk.MUp, 0)
-                        fire_in(ahk.RDown, 10)
-                        fire_in(ahk.RUp, 20)
                         ahk.block_mouse_move(True)
+                        ahk.MUp()
+                        ahk.RDown()
+                        fire_in(ahk.RUp, 50)
                         fire_in(ahk.block_mouse_move, 300, {False})
                 else:
                     fire_in(ahk.MUp, 50)
