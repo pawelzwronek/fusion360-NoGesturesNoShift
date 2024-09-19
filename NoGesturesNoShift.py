@@ -10,6 +10,9 @@
 # v1.6 - fix for Fusion360 2.0.12665 - March 2022 Update
 # v1.7 - fix for Fusion360 2.0.17244 - September 2023 Update
 #      - python changed to 3.11
+# v1.8 - fix for Fusion360 2.0.20256
+#      - python changed to 3.12
+#      - update SWIG to v4.2.0
 
 import math
 import threading
@@ -31,7 +34,7 @@ if len(sys.argv) > 1:
 
 print(boot)
 
-# Logfile 
+# Logfile
 _tmpPath =None
 
 
@@ -157,7 +160,7 @@ def RButtonup(event):
                 detect_move(False)
                 if rmbAsOrbit:
                     ahk.SetKeyState('VK_LSHIFT', False) # release SHIFT key
-                
+
                 if not move_detected:
                     if not rmbAsOrbit and shift_pressed:
                         log('no move, shift')
