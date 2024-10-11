@@ -13,6 +13,9 @@
 # v1.8 - fix for Fusion360 2.0.20256
 #      - python changed to 3.12
 #      - update SWIG to v4.2.0
+# v2.0 - fix hung up on rapid RMB clicks
+#      - better RMB response
+#      - pure python implementation, no SWIG binaries
 
 import math
 import threading
@@ -24,8 +27,11 @@ import traceback
 import tkinter as tk
 import time
 
+# pylint: disable=W0603
+
 logToFile = False
 logToConsole = False
+
 rmbAsOrbit = True
 
 boot = 'boot'
@@ -37,26 +43,25 @@ print(boot)
 # Logfile
 _tmpPath =None
 
+pid = os.getpid()
 
 def log(msg):
-    global boot, _tmpPath, logToConsole, logToFile
+    global _tmpPath
     if logToFile or logToConsole:
         fracSecs = time.time()
         fracSecs = int((fracSecs - int(fracSecs))*1000)
-        msg = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.{:03}:".format(fracSecs)) + boot + ' ' + str(msg)
+        msg = f"{datetime.datetime.now().strftime(f'%Y-%m-%d %H:%M:%S.{fracSecs:03}')} {boot}({pid}): {msg}"
         if logToConsole:
             print(msg, flush=True)
         if logToFile:
             if not _tmpPath:
-                import tempfile
+                import tempfile # pylint: disable=C0415
                 with tempfile.NamedTemporaryFile(mode='w', delete=False, prefix='NoGestures_', suffix='.log') as tmpFile:
                     if tmpFile and tmpFile.file and tmpFile.name:
                         _tmpPath = tmpFile.name
             if _tmpPath:
-                with open(_tmpPath, 'a') as f:
+                with open(_tmpPath, 'a', encoding='utf-8') as f:
                     f.write(msg + '\n')
-        # with open("C:\\temp\\fusionlog.log", "a", buffering=1) as f:
-            # f.write((msg + '\n'))
 
 fromFusion = __name__ != '__main__'
 log('fromFusion: ' + str(fromFusion))
@@ -80,7 +85,7 @@ try:
         from . import autohotkey as ahk
     else:
         import autohotkey as ahk
-except Exception as ex:
+except ImportError as ex:
     log(traceback.format_exc())
 
 # ==================================+++++++++++++++++===================================================================
@@ -88,7 +93,7 @@ except Exception as ex:
 
 def fire_in(func, time_ms, ars=None):
     log('fire in ' + str(time_ms) + ' ' + str(func.__name__) + '(' + str(ars) + ')')
-    threading.Timer(time_ms/1000, func, ars).start()
+    threading.Timer(time_ms/1000, func, args=ars).start()
 
 xpos = 0
 ypos = 0
@@ -128,30 +133,32 @@ def detect_move(start=-1):
 
 
 def RButton(event):
-    global rbutton_down, rmbAsOrbit, shift_pressed
+    global rbutton_down, shift_pressed
     try:
         if not event.Injected:
             if is_in_fusion():
                 log('rdown inFusion')
                 rbutton_down = True
-                fire_in(ahk.MDown, 20)
+                fire_in(ahk.MDown, 1)
                 detect_move(True)
                 shift_pressed = ahk.GetKeyState('VK_LSHIFT')
                 if rmbAsOrbit:
                     if not shift_pressed:
                         ahk.SetKeyState('VK_LSHIFT', True) # press SHIFT key
                     else:
-                        fire_in(ahk.MUp, 30)
+                        ahk.block_mouse_move(True)
+                        fire_in(ahk.MUp, 100)
+                        fire_in(ahk.block_mouse_move, 120, {False})
                 return False  # block event
             else:
                 log('rdown ')
-    except Exception:
+    except Exception: # pylint: disable=W0703
         log(traceback.format_exc())
     return True  # pass event to next hook
 
 
 def RButtonup(event):
-    global rbutton_down, move_detected, shift_pressed
+    global rbutton_down
     try:
         if not event.Injected:
             if rbutton_down:
@@ -170,20 +177,15 @@ def RButtonup(event):
                     elif not shift_pressed:
                         log('no move, no shift')
                         ahk.block_mouse_move(True)
-                        ahk.MUp()
-                        ahk.RDown()
-                        fire_in(ahk.RUp, 50)
+                        fire_in(ahk.MUp, 0)
+                        fire_in(ahk.RDown, 10)
+                        fire_in(ahk.RUp, 100)
                         fire_in(ahk.block_mouse_move, 300, {False})
                 else:
                     fire_in(ahk.MUp, 50)
 
-                        # fire_in(ahk.MUp, 0)
-                        # fire_in(ahk.MDown, 400)
-                        # fire_in(ahk.MUp, 420)
-                        # fire_in(ahk.SetKeyState, 430, ars=['VK_LSHIFT', False]) # release SHIFT key
-
                 return False  # block event
-    except Exception:
+    except Exception: # pylint: disable=W0703
         log(traceback.format_exc())
     return True  # pass event to next hook
 
@@ -201,34 +203,30 @@ try:
         log('mainloop starting...')
         root.mainloop()
         log('mainloop ended')
-except Exception:
+except Exception: # pylint: disable=W0703
     log(traceback.format_exc())
 
 
 # fusion callback
-def run(context):
-    global fromFusion, process, ui
+def run(_context):
     log('run')
     if process is not None:
         log('bootstrap')
-    # try:
-    #     app = adsk.core.Application.get()
-    #     ui = app.userInterface
-    #     # ui.messageBox('run')
-    # except:
-    #     if ui:
-    #         ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
+
+def process_terminate():
+    process.terminate()
 
 # fusion callback
-def stop(context):
-    global process, ui
+def stop(_context):
     log('stop')
     if ui is not None:
         ui.messageBox('stop')
     if process is not None:
-        log('terminate...')
-        process.terminate()
+        log(f'kill {process.pid}')
+        fire_in(process_terminate, 1)
+        time.sleep(0.1)
+        log('process killed')
 
 
 if not fromFusion and boot == 'boot':

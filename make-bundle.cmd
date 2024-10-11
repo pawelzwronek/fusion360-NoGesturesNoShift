@@ -1,19 +1,16 @@
 @prompt $g
 
-set dst="bundle v1.8"
+set dst="bundle v2.0"
 
 rmdir /S /Q %dst%
 mkdir %dst%
-mkdir %dst%\pyHook
 mkdir %dst%\icons
+mkdir %dst%\pyHook
 
-copy pyHook\__init__.py  %dst%\pyHook
-copy pyHook\*.pyd  %dst%\pyHook
-copy pyHook\cpyHook.py  %dst%\pyHook
-copy pyHook\HookManager.py  %dst%\pyHook
-copy pyHook\LICENSE.txt  %dst%\pyHook
+copy icons %dst%\icons
+copy pyHook  %dst%\pyHook
+copy privacy-policy.md %dst%
 copy autohotkey.py  %dst%
 copy NoGesturesNoShift.py  %dst%
-copy icons %dst%\icons
 
 pause
