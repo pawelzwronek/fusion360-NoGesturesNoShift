@@ -17,6 +17,10 @@
 #      - better RMB response
 #      - pure python implementation, no SWIG binaries
 # v2.1 - fix not starting when there is a space character in user name
+# v2.2 - fix hanging on first Fusion startup after an update
+#      - subprocess is now spawned in a background thread so it cannot block
+#        Fusion's module loading (e.g. when the new python.exe is briefly
+#        locked by antivirus / Windows Defender right after the update)
 
 import math
 import threading
@@ -30,24 +34,25 @@ import time
 
 # pylint: disable=W0603
 
-VERSION = '2.1'
+VERSION = '2.2'
 APP_NAME = 'NoGesturesNoShift'
+
+rmbAsOrbit = True
 
 logToFile = False
 logToConsole = False
 
-rmbAsOrbit = True
-
+# --- Global state (initialized in run()) ---
 boot = 'boot'
-if len(sys.argv) > 1:
-    boot = 'main'
-
-print(boot)
-
-# Logfile
-_tmpPath =None
-
-pid = os.getpid()
+_tmpPath = None
+pid = 0
+fromFusion = False
+pyt = ''
+process = None
+_spawn_thread = None
+ahk = None
+ui = None
+root = None
 
 def log(msg):
     global _tmpPath
@@ -67,33 +72,6 @@ def log(msg):
                 with open(_tmpPath, 'a', encoding='utf-8') as f:
                     f.write(msg + '\n')
 
-log(APP_NAME + ' v' + VERSION + ' started')
-
-fromFusion = __name__ != '__main__'
-log('fromFusion: ' + str(fromFusion))
-
-# find Fusion python interpreter
-pyt = os.path.join(os.path.split(tk.__file__)[0], '..\\..\\python')
-log('exe: ' + pyt)
-
-# if executed directly from Fusion run this script as a subprocess to avoid
-# lags in mouse events caused by Fusion's python loop
-process = None
-if len(sys.argv) == 1:
-    si = subprocess.STARTUPINFO()
-    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW | subprocess.CREATE_NEW_PROCESS_GROUP  # hide console window
-    args = [pyt, __file__, 'main']
-    log('running subprocess: ' + str(args))
-    process = subprocess.Popen(args, startupinfo=si)
-
-
-try:
-    if fromFusion:
-        from . import autohotkey as ahk
-    else:
-        import autohotkey as ahk
-except ImportError as ex:
-    log(traceback.format_exc())
 
 # ==================================+++++++++++++++++===================================================================
 # ==================================   main script   ===================================================================
@@ -196,39 +174,85 @@ def RButtonup(event):
         log(traceback.format_exc())
     return True  # pass event to next hook
 
-ui = None
-try:
-    if process is None:
-        log('hook RMB')
-        ahk.setOnRButton(RButton)
-        ahk.setOnRButtonUp(RButtonup)
-        ahk.hookMouse()
 
-        # start hiddent Tk window to pump event
-        root = tk.Tk()
-        root.withdraw()
-        log('mainloop starting...')
-        root.mainloop()
-        log('mainloop ended')
-except Exception: # pylint: disable=W0703
-    log(traceback.format_exc())
+# Fusion callback
+def run(context):
+    global boot, pid, fromFusion, pyt, process, _spawn_thread, ahk, ui, root
 
+    boot = 'boot'
+    fromFusion = context is not None
+    if not fromFusion:
+        boot = 'main'
 
-# fusion callback
-def run(_context):
-    log('run')
-    if process is not None:
+    log('fromFusion: ' + str(fromFusion))
+    log('__name__: ' + str(__name__))
+    log('args: ' + str(sys.argv))
+
+    pid = os.getpid()
+    log(APP_NAME + ' v' + VERSION + ' started')
+
+    # find Fusion python interpreter
+    pyt = os.path.join(os.path.split(tk.__file__)[0], '..\\..\\python')
+    log('exe: ' + pyt)
+
+    # if executed directly from Fusion run this script as a subprocess to avoid
+    # lags in mouse events caused by Fusion's python loop
+    if fromFusion:
+        # Spawn the subprocess in a background thread so a slow or blocking Popen
+        # (e.g. antivirus scanning the newly-updated python.exe right after a
+        # Fusion 360 update) cannot freeze Fusion's module-loading phase.
+        def _do_spawn():
+            global process
+            try:
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW | subprocess.CREATE_NEW_PROCESS_GROUP  # hide console window
+                args = [pyt, __file__, 'main']
+                log('running subprocess: ' + str(args))
+                process = subprocess.Popen(args, startupinfo=si)
+            except Exception:  # pylint: disable=W0703
+                log('failed to start subprocess:\n' + traceback.format_exc())
+        _spawn_thread = threading.Thread(target=_do_spawn, daemon=True)
+        _spawn_thread.start()
         log('bootstrap')
+    else:
+        try:
+            if fromFusion:
+                from . import autohotkey as ahk  # pylint: disable=C0415
+            else:
+                import autohotkey as ahk  # pylint: disable=C0415
+        except ImportError:
+            log(traceback.format_exc())
+            return
+
+        ui = None
+        try:
+            log('hook RMB')
+            ahk.setOnRButton(RButton)
+            ahk.setOnRButtonUp(RButtonup)
+            ahk.hookMouse()
+
+            # start hidden Tk window to pump events
+            root = tk.Tk()
+            root.withdraw()
+            log('mainloop starting...')
+            root.mainloop()
+            log('mainloop ended')
+        except Exception:  # pylint: disable=W0703
+            log(traceback.format_exc())
 
 
 def process_terminate():
     process.terminate()
 
-# fusion callback
+
+# Fusion callback
 def stop(_context):
     log('stop')
     if ui is not None:
         ui.messageBox('stop')
+    if _spawn_thread is not None and _spawn_thread.is_alive():
+        log('waiting for spawn thread to finish...')
+        _spawn_thread.join(timeout=5)
     if process is not None:
         log(f'kill {process.pid}')
         fire_in(process_terminate, 1)
@@ -236,11 +260,11 @@ def stop(_context):
         log('process killed')
 
 
-if not fromFusion and boot == 'boot':
+if __name__ == '__main__':
     run(None)
-    root = tk.Tk()
-    root.mainloop()
-    log('mainloop started')
+    if fromFusion:
+        # standalone (for testing) boot phase: keep alive while the subprocess runs
+        _boot_root = tk.Tk()
+        _boot_root.mainloop()
     stop(None)
-
-log('end of script')
+    log('end of script')
